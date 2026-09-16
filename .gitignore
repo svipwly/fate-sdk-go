@@ -1,0 +1,23 @@
+# Binaries and test artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+dist/
+dist_release/
+bin/
+
+# Temporary and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment files
+*.env
+.env.local
