@@ -193,6 +193,17 @@ func (c *Client) ValidateBearerToken(ctx context.Context, token string) (*User, 
 	return user, nil
 }
 
+// SetSession stores a user session with an explicit session ID and custom TTL.
+func (c *Client) SetSession(sessionID string, user User, ttl time.Duration) {
+	if ttl <= 0 {
+		ttl = c.cfg.SessionTTL
+	}
+	c.sessions.Store(sessionID, Session{
+		User:      user,
+		ExpiresAt: time.Now().Add(ttl),
+	})
+}
+
 // CreateSession generates a secure session ID and stores user claims.
 func (c *Client) CreateSession(user User) string {
 	b := make([]byte, 32)
