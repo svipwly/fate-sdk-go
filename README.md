@@ -11,6 +11,8 @@ Standard Go SDK and core infrastructure utilities for cloud-native microservices
 
 * **`boot`**: Standardized service startup headers, build metadata reflection (Git commit hash, dirty status, Go runtime), and `-v` / `--version` CLI command handlers.
 * **`updater`**: Zero-dependency self-update engine supporting atomic binary replacement, SHA256 checksum verification, and SemVer comparisons with release CDNs.
+* **`ginspa`**: High-performance Single Page Application (SPA) embedded static file server for Gin with automatic immutable caching, no-cache headers for `index.html`, and client-side routing fallback.
+* **`oidc`**: Lightweight OpenID Connect / OAuth 2.0 authentication client, token verification with memory caching, and session management.
 
 ---
 
@@ -53,7 +55,65 @@ func main() {
 }
 ```
 
-### 2. Auto Update & Release CDN Integration (`updater`)
+### 2. Embedded Frontend SPA Serving (`ginspa`)
+
+```go
+package main
+
+import (
+	"embed"
+
+	"github.com/gin-gonic/gin"
+	"github.com/svipwly/fate-sdk-go/ginspa"
+)
+
+//go:embed dist/*
+var staticFS embed.FS
+
+func main() {
+	router := gin.Default()
+
+	// Mount embedded frontend SPA with 1 line
+	ginspa.Serve(router, staticFS)
+
+	router.Run(":8080")
+}
+```
+
+### 3. OpenID Connect / SSO Authentication (`oidc`)
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+
+	"github.com/svipwly/fate-sdk-go/oidc"
+)
+
+func main() {
+	client := oidc.NewClient(oidc.Config{
+		IssuerURL:    "https://auth.example.com",
+		ClientID:     "my-service",
+		ClientSecret: "my-secret",
+		RedirectURI:  "/auth/callback",
+	})
+
+	// 1. Generate authorization redirect URL
+	authURL := client.GetAuthURL("random-state", "")
+	log.Printf("Login at: %s", authURL)
+
+	// 2. Exchange code for user profile
+	user, err := client.ExchangeCode(context.Background(), "auth-code", "")
+	if err != nil {
+		log.Fatalf("Login error: %v", err)
+	}
+	log.Printf("Welcome, %s (%s)", user.DisplayName, user.Email)
+}
+```
+
+### 4. Auto Update & Release CDN Integration (`updater`)
 
 ```go
 package main
@@ -87,10 +147,11 @@ func checkUpdate() {
 | :--- | :--- | :--- |
 | **`boot`** | `github.com/svipwly/fate-sdk-go/boot` | Startup log formatting, buildinfo reflection, version CLI |
 | **`updater`** | `github.com/svipwly/fate-sdk-go/updater` | Release manifest parser, SemVer comparator, atomic binary self-upgrader |
+| **`ginspa`** | `github.com/svipwly/fate-sdk-go/ginspa` | Embedded frontend SPA static server for Gin with caching and routing fallback |
+| **`oidc`** | `github.com/svipwly/fate-sdk-go/oidc` | OpenID Connect / OAuth 2.0 client, token cache, and session manager |
 
 ---
 
 ## License
 
 [MIT License](LICENSE) © 2026 Fate Authors
-
