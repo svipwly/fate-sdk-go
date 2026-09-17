@@ -223,7 +223,31 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool) error {
 	}
 
 	if !info.CanUpdate && !force {
-		fmt.Printf("✓ %s is already up to date (%s)\n", strings.ToLower(info.AppName), currentVersion)
+		localCommit := getLocalCommit()
+		targetCommit := info.Commit
+		if len(targetCommit) > 7 {
+			targetCommit = targetCommit[:7]
+		}
+		cmdName := strings.ToLower(info.AppName)
+		if localCommit != "" && targetCommit != "" && localCommit != targetCommit {
+			fmt.Printf("%s new build available: %s (%s -> %s)\nRun '%s upgrade -f' to reinstall.\n",
+				cmdName,
+				info.LatestVersion,
+				localCommit,
+				targetCommit,
+				cmdName,
+			)
+			return nil
+		}
+		commit := targetCommit
+		if commit == "" {
+			commit = localCommit
+		}
+		if commit != "" {
+			fmt.Printf("✓ %s is up to date: %s (%s)\n", cmdName, currentVersion, commit)
+		} else {
+			fmt.Printf("✓ %s is up to date: %s\n", cmdName, currentVersion)
+		}
 		return nil
 	}
 
@@ -298,7 +322,15 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool) error {
 	if info.SHA256 != "" {
 		computedSHA := hex.EncodeToString(hasher.Sum(nil))
 		if !strings.EqualFold(computedSHA, info.SHA256) {
-			return fmt.Errorf("checksum mismatch: expected %s, got %s", info.SHA256, computedSHA)
+			targetCommit := info.Commit
+			if len(targetCommit) > 7 {
+				targetCommit = targetCommit[:7]
+			}
+			verTag := info.LatestVersion
+			if targetCommit != "" {
+				verTag = fmt.Sprintf("%s (%s)", info.LatestVersion, targetCommit)
+			}
+			return fmt.Errorf("checksum mismatch\ntarget: %s\nexpected: %s\ngot: %s", verTag, info.SHA256, computedSHA)
 		}
 	}
 
@@ -346,10 +378,26 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool) error {
 		}
 		fmt.Printf("✓ Successfully reinstalled: %s%s\n", info.LatestVersion, commitTag)
 	} else {
+		localCommit := getLocalCommit()
+		targetCommit := info.Commit
+		if len(targetCommit) > 7 {
+			targetCommit = targetCommit[:7]
+		}
+		formatVerWithCommit := func(ver, commit string) string {
+			if commit != "" {
+				return fmt.Sprintf("%s (%s)", ver, commit)
+			}
+			return ver
+		}
 		if currentVersion != "" && currentVersion != "dev" {
-			fmt.Printf("✓ Successfully upgraded: %s -> %s\n", currentVersion, info.LatestVersion)
+			fmt.Printf("✓ Successfully upgraded: %s -> %s\n",
+				formatVerWithCommit(currentVersion, localCommit),
+				formatVerWithCommit(info.LatestVersion, targetCommit),
+			)
 		} else {
-			fmt.Printf("✓ Successfully upgraded: %s\n", info.LatestVersion)
+			fmt.Printf("✓ Successfully upgraded: %s\n",
+				formatVerWithCommit(info.LatestVersion, targetCommit),
+			)
 		}
 	}
 
