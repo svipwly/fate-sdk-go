@@ -59,3 +59,24 @@ func TestCheckUpdate(t *testing.T) {
 		t.Errorf("expected CanUpdate = true for v0.1.0 -> v0.2.0")
 	}
 }
+
+func TestPrintCheckUpdate(t *testing.T) {
+	manifest := ReleaseManifest{
+		Name:        "TestApp",
+		Version:     "v0.2.0",
+		PublishedAt: "2026-09-16T20:00:00Z",
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(manifest)
+	}))
+	defer ts.Close()
+
+	if err := PrintCheckUpdate("TestApp", ts.URL, "v0.1.0", "dev", ""); err != nil {
+		t.Fatalf("PrintCheckUpdate failed: %v", err)
+	}
+	if err := PrintCheckUpdate("TestApp", ts.URL, "v0.2.0", "dev", ""); err != nil {
+		t.Fatalf("PrintCheckUpdate up to date failed: %v", err)
+	}
+}
+

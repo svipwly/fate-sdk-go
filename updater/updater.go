@@ -14,8 +14,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/svipwly/fate-sdk-go/boot"
 )
 
 var (
@@ -54,6 +52,37 @@ type SystemVersionInfo struct {
 	DownloadURL      string `json:"download_url,omitempty"`
 	SHA256           string `json:"sha256,omitempty"`
 	IsUpgrading      bool   `json:"is_upgrading"`
+}
+
+func isTerminal() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
+type progressWriter struct {
+	total      int64
+	downloaded int64
+	lastUpdate time.Time
+	prefix     string
+	isTTY      bool
+}
+
+func (pw *progressWriter) Write(p []byte) (int, error) {
+	n := len(p)
+	pw.downloaded += int64(n)
+	now := time.Now()
+	if pw.isTTY && pw.total > 0 && (now.Sub(pw.lastUpdate) >= 60*time.Millisecond || pw.downloaded == pw.total) {
+		pw.lastUpdate = now
+		pct := int(float64(pw.downloaded) / float64(pw.total) * 100)
+		if pct > 100 {
+			pct = 100
+		}
+		fmt.Printf("\r%s %d%%", pw.prefix, pct)
+	}
+	return n, nil
 }
 
 // CheckUpdate queries remote latest.json and determines if an update is available.
@@ -119,23 +148,24 @@ func CheckUpdate(manifestURL, currentVersion, currentCommit, currentBuildTime st
 	return info, nil
 }
 
-// PrintCheckUpdate checks for remote updates and prints a clean user message to stdout.
+// PrintCheckUpdate checks for remote updates and prints a clean 2-line status message.
 func PrintCheckUpdate(appName, manifestURL, currentVersion, currentCommit, currentBuildTime string) error {
 	info, err := CheckUpdate(manifestURL, currentVersion, currentCommit, currentBuildTime)
 	if err != nil {
 		return fmt.Errorf("check update failed: %w", err)
 	}
 
+	cmdName := strings.ToLower(appName)
 	if info.CanUpdate {
-		fmt.Printf("🚀 %s update available: %s -> %s\nRun '%s upgrade' to update.\n", appName, currentVersion, info.LatestVersion, appName)
+		fmt.Printf("%s update available: %s -> %s\nRun '%s upgrade' to update.\n", cmdName, currentVersion, info.LatestVersion, cmdName)
 	} else {
-		fmt.Printf("✓ %s %s is up to date\n", appName, currentVersion)
+		fmt.Printf("✓ %s is up to date (%s)\n", cmdName, currentVersion)
 	}
 	return nil
 }
 
 // ExecuteSelfUpgrade downloads the new binary, verifies SHA256 checksum, performs atomic replacement, and restarts.
-func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool) error {
+func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool, isService bool) error {
 	upgradeMu.Lock()
 	if isUpgrading {
 		upgradeMu.Unlock()
@@ -156,7 +186,8 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool) error {
 	}
 
 	if !info.CanUpdate && !force {
-		return fmt.Errorf("already up to date (%s)", currentVersion)
+		fmt.Printf("✓ %s is already up to date (%s)\n", strings.ToLower(info.AppName), currentVersion)
+		return nil
 	}
 
 	if info.DownloadURL == "" {
@@ -172,14 +203,32 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool) error {
 		return fmt.Errorf("resolve symlinks failed: %w", err)
 	}
 
-	tmpFile := execPath + ".tmp"
+	appName := info.AppName
+	if appName == "" {
+		appName = filepath.Base(execPath)
+	}
+
+	// Line 1: Found new release
+	if currentVersion != "" && info.LatestVersion != "" && currentVersion != info.LatestVersion {
+		fmt.Printf("Found new release: %s %s -> %s\n", strings.ToLower(appName), currentVersion, info.LatestVersion)
+	} else {
+		fmt.Printf("Reinstalling %s %s...\n", strings.ToLower(appName), info.LatestVersion)
+	}
+
+	tmpFile := execPath + ".upgrade.tmp"
 	defer os.Remove(tmpFile)
 
-	fmt.Printf("[Updater] Downloading %s (%s) from %s ...\n", info.AppName, info.LatestVersion, info.DownloadURL)
 	httpClient := &http.Client{Timeout: 120 * time.Second}
-	resp, err := httpClient.Get(info.DownloadURL)
+	downloadURL := info.DownloadURL
+	if strings.Contains(downloadURL, "?") {
+		downloadURL += fmt.Sprintf("&_t=%d", time.Now().UnixMilli())
+	} else {
+		downloadURL += fmt.Sprintf("?_t=%d", time.Now().UnixMilli())
+	}
+
+	resp, err := httpClient.Get(downloadURL)
 	if err != nil {
-		return fmt.Errorf("download binary failed: %w", err)
+		return fmt.Errorf("download failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -192,66 +241,125 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool) error {
 		return fmt.Errorf("create temporary binary failed: %w", err)
 	}
 
+	// Line 2: Dynamic download progress
+	prefix := "Downloading binary..."
+	if resp.ContentLength > 0 {
+		sizeMB := float64(resp.ContentLength) / (1024 * 1024)
+		prefix = fmt.Sprintf("Downloading binary (%.1f MB)...", sizeMB)
+	}
+	fmt.Print(prefix)
+
+	pw := &progressWriter{
+		total:      resp.ContentLength,
+		prefix:     prefix,
+		isTTY:      isTerminal(),
+		lastUpdate: time.Now(),
+	}
+
 	hasher := sha256.New()
-	writer := io.MultiWriter(out, hasher)
-	if _, err := io.Copy(writer, resp.Body); err != nil {
+	multiWriter := io.MultiWriter(out, hasher, pw)
+
+	if _, err := io.Copy(multiWriter, resp.Body); err != nil {
 		out.Close()
-		return fmt.Errorf("write binary failed: %w", err)
+		return fmt.Errorf("save stream failed: %w", err)
 	}
 	_ = out.Sync()
 	out.Close()
 
+	if pw.isTTY {
+		fmt.Printf("\r%s done\n", prefix)
+	} else {
+		fmt.Println(" done")
+	}
+
+	// Line 3: Verifying and installing...
+	fmt.Print("Verifying and installing... ")
+
 	if info.SHA256 != "" {
 		computedSHA := hex.EncodeToString(hasher.Sum(nil))
 		if !strings.EqualFold(computedSHA, info.SHA256) {
+			fmt.Println("failed")
 			return fmt.Errorf("checksum mismatch: expected %s, got %s", info.SHA256, computedSHA)
 		}
-		fmt.Printf("[Updater] ✓ Checksum verified (SHA256: %s)\n", computedSHA)
 	}
 
-	oldFile := execPath + ".old"
-	_ = os.Remove(oldFile)
-	if err := os.Rename(execPath, oldFile); err != nil {
+	bakPath := execPath + ".bak"
+	_ = os.Remove(bakPath)
+	if err := copyFile(execPath, bakPath); err != nil {
+		fmt.Println("failed")
 		return fmt.Errorf("backup current binary failed: %w", err)
 	}
 
 	if err := os.Rename(tmpFile, execPath); err != nil {
-		_ = os.Rename(oldFile, execPath)
+		_ = os.Rename(bakPath, execPath)
+		fmt.Println("failed")
 		return fmt.Errorf("replace binary failed: %w", err)
 	}
-	_ = os.Remove(oldFile)
+	fmt.Println("done")
 
-	fmt.Printf("[Updater] ✨ Successfully upgraded %s to %s!\n", info.AppName, info.LatestVersion)
+	// Line 4: Success confirmation
+	fmt.Printf("✓ Successfully upgraded to %s\n", info.LatestVersion)
 
-	if len(os.Args) > 0 {
-		fmt.Printf("[Updater] Restarting process %s ...\n", execPath)
+	if isService && len(os.Args) > 0 {
+		time.Sleep(200 * time.Millisecond)
 		_ = syscall.Exec(execPath, os.Args, os.Environ())
 	}
+
 	return nil
 }
 
-// RunSelfUpgrade is a CLI helper that handles self-upgrade arguments and terminal output.
-func RunSelfUpgrade(appName, version, commit, buildTime, manifestURL string, args []string) {
-	force := false
-	for _, a := range args {
-		if a == "--force" || a == "-f" {
-			force = true
+// HandleUpgradeCmd checks command-line arguments for upgrade/check queries.
+// Supported commands:
+//   - "check", "check-update", "-check", "--check": inspects remote release without modifying files.
+//   - "upgrade", "update": downloads, verifies, installs, and restarts.
+// Returns true if an upgrade command was handled, allowing main() to cleanly exit.
+func HandleUpgradeCmd(appName, version, commit, buildTime, manifestURL string, isService ...bool) bool {
+	if len(os.Args) > 1 {
+		arg := strings.ToLower(strings.TrimSpace(os.Args[1]))
+		serviceMode := false
+		if len(isService) > 0 {
+			serviceMode = isService[0]
+		}
+
+		switch arg {
+		case "check", "check-update", "-check", "--check":
+			_ = PrintCheckUpdate(appName, manifestURL, version, commit, buildTime)
+			return true
+
+		case "upgrade", "update":
+			force := false
+			for _, a := range os.Args[2:] {
+				if a == "-f" || a == "--force" {
+					force = true
+				}
+			}
+
+			if err := ExecuteSelfUpgrade(manifestURL, version, force, serviceMode); err != nil {
+				fmt.Fprintf(os.Stderr, "error: upgrade failed: %v\n", err)
+				os.Exit(1)
+			}
+			return true
 		}
 	}
-
-	fmt.Printf("[Updater] Current version: %s\n", boot.FormatVersionTag(version, commit))
-	fmt.Printf("[Updater] Checking for updates from %s ...\n", manifestURL)
-
-	if err := ExecuteSelfUpgrade(manifestURL, version, force); err != nil {
-		fmt.Fprintf(os.Stderr, "[Updater] Upgrade failed: %v\n", err)
-		os.Exit(1)
-	}
+	return false
 }
 
-// RunCheckUpdate is a CLI helper that prints update status and exits.
-func RunCheckUpdate(appName, version, commit, buildTime, manifestURL string, args []string) {
-	if err := PrintCheckUpdate(appName, manifestURL, version, commit, buildTime); err != nil {
-		fmt.Fprintf(os.Stderr, "Check update error: %v\n", err)
-		os.Exit(1)
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
 	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Sync()
 }
+
