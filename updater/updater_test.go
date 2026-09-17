@@ -109,10 +109,10 @@ func TestHandleUpgradeCmdParsing(t *testing.T) {
 	}
 }
 
-func TestRestartSystemdServiceIfActive(t *testing.T) {
-	// Should cleanly no-op for non-existent service
-	restartSystemdServiceIfActive("nonexistent-service-12345")
-	restartSystemdServiceIfActive("")
+func TestIsSystemdServiceActive(t *testing.T) {
+	// Should cleanly return false for non-existent service
+	_, _ = isSystemdServiceActive("nonexistent-service-12345")
+	_, _ = isSystemdServiceActive("")
 }
 
 

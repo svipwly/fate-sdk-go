@@ -211,28 +211,6 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool) error {
 		appName = filepath.Base(execPath)
 	}
 
-	// Line 1: Found new release / Reinstalling
-	isSameVersion := currentVersion != "" && info.LatestVersion != "" && currentVersion == info.LatestVersion
-	if !isSameVersion && currentVersion != "" && info.LatestVersion != "" {
-		fmt.Printf("Found new release: %s %s -> %s\n", strings.ToLower(appName), currentVersion, info.LatestVersion)
-	} else {
-		localCommit := getLocalCommit()
-		targetCommit := info.Commit
-		if targetCommit != "" && len(targetCommit) > 7 {
-			targetCommit = targetCommit[:7]
-		}
-
-		if localCommit != "" && targetCommit != "" && localCommit != targetCommit {
-			fmt.Printf("Reinstalling %s %s (%s -> %s)...\n", strings.ToLower(appName), info.LatestVersion, localCommit, targetCommit)
-		} else if targetCommit != "" {
-			fmt.Printf("Reinstalling %s %s (%s)...\n", strings.ToLower(appName), info.LatestVersion, targetCommit)
-		} else if localCommit != "" {
-			fmt.Printf("Reinstalling %s %s (%s)...\n", strings.ToLower(appName), info.LatestVersion, localCommit)
-		} else {
-			fmt.Printf("Reinstalling %s %s...\n", strings.ToLower(appName), info.LatestVersion)
-		}
-	}
-
 	tmpFile := execPath + ".upgrade.tmp"
 	defer os.Remove(tmpFile)
 
@@ -252,11 +230,11 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool) error {
 		return fmt.Errorf("create temporary binary failed: %w", err)
 	}
 
-	// Line 2: Dynamic download progress
-	prefix := "Downloading binary..."
+	// Line 1: Dynamic download progress
+	prefix := fmt.Sprintf("Downloading %s %s...", strings.ToLower(appName), info.LatestVersion)
 	if resp.ContentLength > 0 {
 		sizeMB := float64(resp.ContentLength) / (1024 * 1024)
-		prefix = fmt.Sprintf("Downloading binary (%.1f MB)...", sizeMB)
+		prefix = fmt.Sprintf("Downloading %s %s (%.1f MB)...", strings.ToLower(appName), info.LatestVersion, sizeMB)
 	}
 	fmt.Print(prefix)
 
@@ -283,15 +261,20 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool) error {
 		fmt.Println(" done")
 	}
 
-	// Line 3: Verifying and installing...
-	fmt.Print("Verifying and installing... ")
-
 	if info.SHA256 != "" {
 		computedSHA := hex.EncodeToString(hasher.Sum(nil))
 		if !strings.EqualFold(computedSHA, info.SHA256) {
-			fmt.Println("failed")
 			return fmt.Errorf("checksum mismatch: expected %s, got %s", info.SHA256, computedSHA)
 		}
+	}
+
+	// Line 2: Install and restart service (if active)
+	svcName := strings.ToLower(appName)
+	systemctlPath, hasActiveService := isSystemdServiceActive(svcName)
+	if hasActiveService {
+		fmt.Printf("Installing and restarting service (%s)... ", svcName)
+	} else {
+		fmt.Print("Installing binary... ")
 	}
 
 	_ = os.Chmod(tmpFile, 0755)
@@ -300,52 +283,57 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool) error {
 		return fmt.Errorf("replace binary failed: %w", err)
 	}
 	_ = os.Chmod(execPath, 0755)
-	fmt.Println("done")
 
-	// Line 4: Smart auto-restart if running as an active systemd service
-	svcName := strings.ToLower(appName)
-	restartSystemdServiceIfActive(svcName)
-
-	// Line 5: Success confirmation
-	if isSameVersion {
-		targetCommit := info.Commit
-		if targetCommit != "" && len(targetCommit) > 7 {
-			targetCommit = targetCommit[:7]
-		}
-		if targetCommit == "" {
-			targetCommit = getLocalCommit()
-		}
-		if targetCommit != "" {
-			fmt.Printf("✓ Successfully reinstalled %s (%s)\n", info.LatestVersion, targetCommit)
+	if hasActiveService {
+		if err := exec.Command(systemctlPath, "restart", svcName).Run(); err != nil {
+			fmt.Printf("failed\n  Notice: Please run 'systemctl restart %s' manually (%v).\n", svcName, err)
 		} else {
-			fmt.Printf("✓ Successfully reinstalled %s\n", info.LatestVersion)
+			fmt.Println("done")
 		}
 	} else {
-		fmt.Printf("✓ Successfully upgraded to %s\n", info.LatestVersion)
+		fmt.Println("done")
+	}
+
+	// Line 3: Final confirmation
+	isSameVersion := currentVersion != "" && info.LatestVersion != "" && currentVersion == info.LatestVersion
+	if isSameVersion {
+		localCommit := getLocalCommit()
+		targetCommit := info.Commit
+		if len(targetCommit) > 7 {
+			targetCommit = targetCommit[:7]
+		}
+		commitTag := ""
+		if localCommit != "" && targetCommit != "" && localCommit != targetCommit {
+			commitTag = fmt.Sprintf(" (%s -> %s)", localCommit, targetCommit)
+		} else if targetCommit != "" {
+			commitTag = fmt.Sprintf(" (%s)", targetCommit)
+		} else if localCommit != "" {
+			commitTag = fmt.Sprintf(" (%s)", localCommit)
+		}
+		fmt.Printf("✓ Successfully reinstalled %s%s\n", info.LatestVersion, commitTag)
+	} else {
+		if currentVersion != "" && currentVersion != "dev" {
+			fmt.Printf("✓ Successfully upgraded (%s -> %s)\n", currentVersion, info.LatestVersion)
+		} else {
+			fmt.Printf("✓ Successfully upgraded to %s\n", info.LatestVersion)
+		}
 	}
 
 	return nil
 }
 
-// restartSystemdServiceIfActive checks if a systemd service exists and is active, and restarts it.
-func restartSystemdServiceIfActive(serviceName string) {
+func isSystemdServiceActive(serviceName string) (string, bool) {
 	if runtime.GOOS != "linux" || serviceName == "" {
-		return
+		return "", false
 	}
 	systemctlPath, err := exec.LookPath("systemctl")
 	if err != nil {
-		return
+		return "", false
 	}
-
-	// Check if service is active: systemctl is-active --quiet <serviceName>
 	if err := exec.Command(systemctlPath, "is-active", "--quiet", serviceName).Run(); err == nil {
-		fmt.Printf("Restarting systemd service (%s)... ", serviceName)
-		if err := exec.Command(systemctlPath, "restart", serviceName).Run(); err == nil {
-			fmt.Println("done")
-		} else {
-			fmt.Printf("failed (%v)\n  Notice: Please run 'systemctl restart %s' manually.\n", err, serviceName)
-		}
+		return systemctlPath, true
 	}
+	return "", false
 }
 
 // HandleUpgradeCmd checks command-line arguments for upgrade/check queries.
