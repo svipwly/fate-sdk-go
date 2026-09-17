@@ -26,13 +26,14 @@ go get github.com/svipwly/fate-sdk-go
 
 ## Quick Start
 
-### 1. Standard Startup Logs & Version Handling (`boot`)
+### 1. Standard CLI Commands & Startup Logs (`boot` & `updater`)
 
 ```go
 package main
 
 import (
 	"github.com/svipwly/fate-sdk-go/boot"
+	"github.com/svipwly/fate-sdk-go/updater"
 )
 
 var (
@@ -42,12 +43,22 @@ var (
 )
 
 func main() {
-	// 1. Intercept CLI version queries (-v, --version, version)
+	// 1. Intercept help commands (help, -h, --help) with automatic alignment
+	if boot.HandleHelpCmd("MyService", "Microservice Description") {
+		return
+	}
+
+	// 2. Intercept version commands (version, --version)
 	if boot.HandleVersionCmd("MyService", Version, Commit, BuildTime) {
 		return
 	}
 
-	// 2. Output standardized startup log header
+	// 3. Intercept upgrade commands (check, upgrade [-f])
+	if updater.HandleUpgradeCmd("MyService", Version, Commit, BuildTime, "https://release.fate.li/myservice/latest.json") {
+		return
+	}
+
+	// 4. Output standardized startup log header
 	// Output: 2026/09/16 21:00:00 [MyService] Version: v0.1.0 (5a5b5c5)
 	boot.PrintVersion("MyService", Version, Commit)
 

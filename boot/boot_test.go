@@ -81,3 +81,48 @@ func TestHandleVersionCmd(t *testing.T) {
 		t.Errorf("expected 'serve' to not be handled")
 	}
 }
+
+func TestHandleHelpCmd(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	// "help" subcommand -> true
+	os.Args = []string{"ssoid", "help"}
+	if !HandleHelpCmd("SSOID", "Identity Provider") {
+		t.Errorf("expected 'help' subcommand to be handled")
+	}
+
+	// "-h" short flag -> true
+	os.Args = []string{"ssoid", "-h"}
+	if !HandleHelpCmd("SSOID", "Identity Provider") {
+		t.Errorf("expected '-h' flag to be handled")
+	}
+
+	// "--help" long flag -> true
+	os.Args = []string{"ssoid", "--help"}
+	if !HandleHelpCmd("SSOID", "Identity Provider") {
+		t.Errorf("expected '--help' flag to be handled")
+	}
+
+	// unknown command -> false
+	os.Args = []string{"ssoid", "run"}
+	if HandleHelpCmd("SSOID", "Identity Provider") {
+		t.Errorf("expected 'run' to not be handled")
+	}
+}
+
+func TestFormatHelpScreen(t *testing.T) {
+	out := FormatHelpScreen("Ark", "Release Engine", Command{
+		Name:        "publish <version>",
+		Description: "Publish to CDN",
+	})
+	if !strings.Contains(out, "Ark - Release Engine") {
+		t.Errorf("expected app title and description")
+	}
+	if !strings.Contains(out, "publish <version>") {
+		t.Errorf("expected custom command")
+	}
+	if !strings.Contains(out, "upgrade [-f]") {
+		t.Errorf("expected universal upgrade command")
+	}
+}

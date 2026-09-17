@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -96,6 +97,64 @@ func HandleVersionCmd(appName, version, commit, buildTime string) bool {
 		arg := strings.ToLower(strings.TrimSpace(os.Args[1]))
 		if arg == "version" || arg == "--version" {
 			fmt.Println(FormatVersionInfo(appName, version, commit, buildTime))
+			return true
+		}
+	}
+	return false
+}
+
+// Command represents a CLI command or flag with its description for help generation.
+type Command struct {
+	Name        string
+	Description string
+}
+
+// FormatHelpScreen produces a beautifully aligned, standard help message for any service in the ecosystem.
+func FormatHelpScreen(appName, description string, customCommands ...Command) string {
+	binName := filepath.Base(os.Args[0])
+	if binName == "." || binName == "/" || binName == "" {
+		binName = strings.ToLower(appName)
+	}
+
+	var allCmds []Command
+	allCmds = append(allCmds, customCommands...)
+	allCmds = append(allCmds, []Command{
+		{Name: "(default)", Description: fmt.Sprintf("Run the %s service", appName)},
+		{Name: "version, --version", Description: "Show version and build metadata"},
+		{Name: "check", Description: "Check for new releases from CDN"},
+		{Name: "upgrade [-f]", Description: "Self-upgrade to the latest version"},
+		{Name: "help, -h, --help", Description: "Show this help message"},
+	}...)
+
+	maxLen := 0
+	for _, c := range allCmds {
+		if len(c.Name) > maxLen {
+			maxLen = len(c.Name)
+		}
+	}
+
+	var sb strings.Builder
+	if description != "" {
+		sb.WriteString(fmt.Sprintf("%s - %s\n\n", appName, description))
+	} else {
+		sb.WriteString(fmt.Sprintf("%s\n\n", appName))
+	}
+	sb.WriteString(fmt.Sprintf("Usage:\n  %s [command] [options]\n\nCommands:\n", binName))
+
+	for _, c := range allCmds {
+		sb.WriteString(fmt.Sprintf("  %-*s   %s\n", maxLen, c.Name, c.Description))
+	}
+
+	return sb.String()
+}
+
+// HandleHelpCmd checks if command-line arguments match "help", "-h", or "--help".
+// If matched, it prints the formatted help message to stdout and returns true so main() can cleanly exit.
+func HandleHelpCmd(appName, description string, customCommands ...Command) bool {
+	if len(os.Args) > 1 {
+		arg := strings.ToLower(strings.TrimSpace(os.Args[1]))
+		if arg == "help" || arg == "-h" || arg == "--help" {
+			fmt.Print(FormatHelpScreen(appName, description, customCommands...))
 			return true
 		}
 	}

@@ -31,9 +31,8 @@ func TestCompareSemVer(t *testing.T) {
 
 func TestCheckUpdate(t *testing.T) {
 	manifest := ReleaseManifest{
-		Name:        "TestApp",
-		Version:     "v0.2.0",
-		PublishedAt: "2026-09-16T20:00:00Z",
+		Name:    "TestApp",
+		Version: "v0.2.0",
 		Platforms: map[string]PlatformDetail{
 			"linux-amd64": {
 				Filename: "testapp-linux-amd64",
@@ -48,7 +47,7 @@ func TestCheckUpdate(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	info, err := CheckUpdate(ts.URL, "v0.1.0", "dev", "")
+	info, err := CheckUpdate(ts.URL, "v0.1.0")
 	if err != nil {
 		t.Fatalf("CheckUpdate failed: %v", err)
 	}
@@ -63,9 +62,8 @@ func TestCheckUpdate(t *testing.T) {
 
 func TestPrintCheckUpdate(t *testing.T) {
 	manifest := ReleaseManifest{
-		Name:        "TestApp",
-		Version:     "v0.2.0",
-		PublishedAt: "2026-09-16T20:00:00Z",
+		Name:    "TestApp",
+		Version: "v0.2.0",
 	}
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -73,19 +71,18 @@ func TestPrintCheckUpdate(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	if err := PrintCheckUpdate("TestApp", ts.URL, "v0.1.0", "dev", ""); err != nil {
+	if err := PrintCheckUpdate("TestApp", ts.URL, "v0.1.0"); err != nil {
 		t.Fatalf("PrintCheckUpdate failed: %v", err)
 	}
-	if err := PrintCheckUpdate("TestApp", ts.URL, "v0.2.0", "dev", ""); err != nil {
+	if err := PrintCheckUpdate("TestApp", ts.URL, "v0.2.0"); err != nil {
 		t.Fatalf("PrintCheckUpdate up to date failed: %v", err)
 	}
 }
 
 func TestHandleUpgradeCmdParsing(t *testing.T) {
 	manifest := ReleaseManifest{
-		Name:        "TestApp",
-		Version:     "v0.2.0",
-		PublishedAt: "2026-09-16T20:00:00Z",
+		Name:    "TestApp",
+		Version: "v0.2.0",
 	}
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -95,19 +92,19 @@ func TestHandleUpgradeCmdParsing(t *testing.T) {
 
 	// "check" subcommand -> true
 	os.Args = []string{"app", "check"}
-	if !HandleUpgradeCmd("TestApp", "v0.1.0", "dev", "", ts.URL) {
+	if !HandleUpgradeCmd("TestApp", "v0.1.0", ts.URL) {
 		t.Errorf("expected 'check' subcommand to be handled")
 	}
 
 	// "--check" flag -> false (rejected, must be subcommand)
 	os.Args = []string{"app", "--check"}
-	if HandleUpgradeCmd("TestApp", "v0.1.0", "dev", "", ts.URL) {
+	if HandleUpgradeCmd("TestApp", "v0.1.0", ts.URL) {
 		t.Errorf("expected '--check' to not be handled as subcommand")
 	}
 
 	// "serve" command -> false
 	os.Args = []string{"app", "serve"}
-	if HandleUpgradeCmd("TestApp", "v0.1.0", "dev", "", ts.URL) {
+	if HandleUpgradeCmd("TestApp", "v0.1.0", ts.URL) {
 		t.Errorf("expected 'serve' to not be handled")
 	}
 }
