@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -32,17 +33,19 @@ type PlatformDetail struct {
 type ReleaseManifest struct {
 	Name      string                    `json:"name"`
 	Version   string                    `json:"version"`
+	Commit    string                    `json:"commit,omitempty"`
 	Platforms map[string]PlatformDetail `json:"platforms"`
 }
 
 // SystemVersionInfo represents runtime version details and upgrade availability.
 type SystemVersionInfo struct {
-	AppName       string `json:"app_name"`
+	AppName        string `json:"app_name"`
 	CurrentVersion string `json:"current_version"`
-	LatestVersion string `json:"latest_version"`
-	CanUpdate     bool   `json:"can_update"`
-	DownloadURL   string `json:"download_url,omitempty"`
-	SHA256        string `json:"sha256,omitempty"`
+	LatestVersion  string `json:"latest_version"`
+	Commit         string `json:"commit,omitempty"`
+	CanUpdate      bool   `json:"can_update"`
+	DownloadURL    string `json:"download_url,omitempty"`
+	SHA256         string `json:"sha256,omitempty"`
 }
 
 func isTerminal() bool {
@@ -115,6 +118,7 @@ func CheckUpdate(manifestURL, currentVersion string) (*SystemVersionInfo, error)
 
 	info.AppName = manifest.Name
 	info.LatestVersion = manifest.Version
+	info.Commit = manifest.Commit
 
 	if entry, ok := manifest.Platforms[platformKey]; ok {
 		info.DownloadURL = entry.URL
@@ -131,6 +135,20 @@ func CheckUpdate(manifestURL, currentVersion string) (*SystemVersionInfo, error)
 	}
 
 	return info, nil
+}
+
+func getLocalCommit() string {
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		for _, setting := range bi.Settings {
+			if setting.Key == "vcs.revision" {
+				if len(setting.Value) > 7 {
+					return setting.Value[:7]
+				}
+				return setting.Value
+			}
+		}
+	}
+	return ""
 }
 
 // PrintCheckUpdate checks for remote updates and prints a clean status message.
@@ -194,10 +212,25 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool) error {
 	}
 
 	// Line 1: Found new release / Reinstalling
-	if currentVersion != "" && info.LatestVersion != "" && currentVersion != info.LatestVersion {
+	isSameVersion := currentVersion != "" && info.LatestVersion != "" && currentVersion == info.LatestVersion
+	if !isSameVersion && currentVersion != "" && info.LatestVersion != "" {
 		fmt.Printf("Found new release: %s %s -> %s\n", strings.ToLower(appName), currentVersion, info.LatestVersion)
 	} else {
-		fmt.Printf("Reinstalling %s %s...\n", strings.ToLower(appName), info.LatestVersion)
+		localCommit := getLocalCommit()
+		targetCommit := info.Commit
+		if targetCommit != "" && len(targetCommit) > 7 {
+			targetCommit = targetCommit[:7]
+		}
+
+		if localCommit != "" && targetCommit != "" && localCommit != targetCommit {
+			fmt.Printf("Reinstalling %s %s (%s -> %s)...\n", strings.ToLower(appName), info.LatestVersion, localCommit, targetCommit)
+		} else if targetCommit != "" {
+			fmt.Printf("Reinstalling %s %s (%s)...\n", strings.ToLower(appName), info.LatestVersion, targetCommit)
+		} else if localCommit != "" {
+			fmt.Printf("Reinstalling %s %s (%s)...\n", strings.ToLower(appName), info.LatestVersion, localCommit)
+		} else {
+			fmt.Printf("Reinstalling %s %s...\n", strings.ToLower(appName), info.LatestVersion)
+		}
 	}
 
 	tmpFile := execPath + ".upgrade.tmp"
@@ -269,12 +302,27 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool) error {
 	_ = os.Chmod(execPath, 0755)
 	fmt.Println("done")
 
-	// Line 4: Success confirmation
-	fmt.Printf("✓ Successfully upgraded to %s\n", info.LatestVersion)
-
-	// Smart auto-restart if running as an active systemd service
+	// Line 4: Smart auto-restart if running as an active systemd service
 	svcName := strings.ToLower(appName)
 	restartSystemdServiceIfActive(svcName)
+
+	// Line 5: Success confirmation
+	if isSameVersion {
+		targetCommit := info.Commit
+		if targetCommit != "" && len(targetCommit) > 7 {
+			targetCommit = targetCommit[:7]
+		}
+		if targetCommit == "" {
+			targetCommit = getLocalCommit()
+		}
+		if targetCommit != "" {
+			fmt.Printf("✓ Successfully reinstalled %s (%s)\n", info.LatestVersion, targetCommit)
+		} else {
+			fmt.Printf("✓ Successfully reinstalled %s\n", info.LatestVersion)
+		}
+	} else {
+		fmt.Printf("✓ Successfully upgraded to %s\n", info.LatestVersion)
+	}
 
 	return nil
 }
@@ -291,11 +339,11 @@ func restartSystemdServiceIfActive(serviceName string) {
 
 	// Check if service is active: systemctl is-active --quiet <serviceName>
 	if err := exec.Command(systemctlPath, "is-active", "--quiet", serviceName).Run(); err == nil {
-		fmt.Printf("Restarting systemd service (%s)...\n", serviceName)
+		fmt.Printf("Restarting systemd service (%s)... ", serviceName)
 		if err := exec.Command(systemctlPath, "restart", serviceName).Run(); err == nil {
-			fmt.Printf("✓ Restarted systemd service: %s\n", serviceName)
+			fmt.Println("done")
 		} else {
-			fmt.Printf("! Notice: could not restart %s.service: %v\n  Please run 'systemctl restart %s' manually.\n", serviceName, err, serviceName)
+			fmt.Printf("failed (%v)\n  Notice: Please run 'systemctl restart %s' manually.\n", err, serviceName)
 		}
 	}
 }
