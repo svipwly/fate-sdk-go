@@ -14,6 +14,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -450,5 +451,145 @@ func HandleUpgradeCmd(appName, currentVersion, manifestURL string) bool {
 		}
 	}
 	return false
+}
+
+// InProcessUpgradeReq defines parameters for headless in-process self-upgrades.
+type InProcessUpgradeReq struct {
+	TargetVersion string
+	DownloadURL   string
+	SHA256        string
+	Force         bool
+	RestartDelay  time.Duration
+}
+
+// PerformInProcessUpgrade performs a headless, silent in-process self-upgrade.
+// It downloads the target binary, verifies SHA256, atomically replaces the running binary,
+// and schedules a graceful syscall.Exec restart in the background.
+func PerformInProcessUpgrade(manifestURL, currentVersion string, req InProcessUpgradeReq) error {
+	upgradeMu.Lock()
+	if isUpgrading {
+		upgradeMu.Unlock()
+		return fmt.Errorf("upgrade already in progress")
+	}
+	isUpgrading = true
+	upgradeMu.Unlock()
+
+	defer func() {
+		upgradeMu.Lock()
+		isUpgrading = false
+		upgradeMu.Unlock()
+	}()
+
+	downloadURL := strings.TrimSpace(req.DownloadURL)
+	expectedSHA := strings.TrimSpace(req.SHA256)
+	targetVersion := strings.TrimSpace(req.TargetVersion)
+
+	if downloadURL == "" || expectedSHA == "" || targetVersion == "" {
+		info, err := CheckUpdate(manifestURL, currentVersion)
+		if err != nil {
+			return fmt.Errorf("check update failed: %w", err)
+		}
+		if downloadURL == "" {
+			downloadURL = info.DownloadURL
+		}
+		if expectedSHA == "" {
+			expectedSHA = info.SHA256
+		}
+		if targetVersion == "" {
+			targetVersion = info.LatestVersion
+		}
+	}
+
+	if downloadURL == "" {
+		return fmt.Errorf("no release binary found for current platform (%s-%s)", runtime.GOOS, runtime.GOARCH)
+	}
+
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate executable failed: %w", err)
+	}
+	execPath, err = filepath.EvalSymlinks(execPath)
+	if err != nil {
+		return fmt.Errorf("resolve symlinks failed: %w", err)
+	}
+
+	localSHA, _ := calculateFileSHA256(execPath)
+	isSameVersion := strings.TrimPrefix(strings.ToLower(targetVersion), "v") == strings.TrimPrefix(strings.ToLower(currentVersion), "v") && currentVersion != "" && currentVersion != "dev"
+	isSameSHA := localSHA != "" && expectedSHA != "" && strings.EqualFold(localSHA, expectedSHA)
+
+	if isSameVersion && isSameSHA && !req.Force {
+		shortSHA := localSHA
+		if len(shortSHA) > 8 {
+			shortSHA = shortSHA[:8]
+		}
+		return fmt.Errorf("already running latest binary (version %s, sha: %s)", currentVersion, shortSHA)
+	}
+
+	tmpFile := execPath + ".upgrade.tmp"
+	_ = os.Remove(tmpFile)
+	defer os.Remove(tmpFile)
+
+	httpClient := &http.Client{Timeout: 120 * time.Second}
+	resp, err := httpClient.Get(bustCache(downloadURL))
+	if err != nil {
+		return fmt.Errorf("download failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download server returned status %d", resp.StatusCode)
+	}
+
+	out, err := os.OpenFile(tmpFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	if err != nil {
+		return fmt.Errorf("create temporary binary failed: %w", err)
+	}
+
+	hasher := sha256.New()
+	multiWriter := io.MultiWriter(out, hasher)
+
+	if _, err := io.Copy(multiWriter, resp.Body); err != nil {
+		out.Close()
+		return fmt.Errorf("stream copy failed: %w", err)
+	}
+	_ = out.Sync()
+	out.Close()
+
+	computedSHA := hex.EncodeToString(hasher.Sum(nil))
+	if expectedSHA != "" && !strings.EqualFold(computedSHA, expectedSHA) {
+		return fmt.Errorf("checksum verification failed (expected %s, got %s)", expectedSHA, computedSHA)
+	}
+
+	_ = os.Chmod(tmpFile, 0755)
+	if err := os.Rename(tmpFile, execPath); err != nil {
+		return fmt.Errorf("atomic rename failed: %w", err)
+	}
+	_ = os.Chmod(execPath, 0755)
+
+	delay := req.RestartDelay
+	if delay <= 0 {
+		delay = 500 * time.Millisecond
+	}
+
+	go func() {
+		time.Sleep(delay)
+		_ = syscall.Exec(execPath, os.Args, os.Environ())
+	}()
+
+	return nil
+}
+
+func calculateFileSHA256(filePath string) (string, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
