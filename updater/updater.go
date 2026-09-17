@@ -301,6 +301,13 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool, isServic
 	fmt.Printf("✓ Successfully upgraded to %s\n", info.LatestVersion)
 
 	if isService && len(os.Args) > 0 {
+		// Prevent infinite re-exec loop if invoked as a CLI upgrade command
+		for _, a := range os.Args {
+			lower := strings.ToLower(strings.TrimSpace(a))
+			if lower == "upgrade" || lower == "update" {
+				return nil
+			}
+		}
 		time.Sleep(200 * time.Millisecond)
 		_ = syscall.Exec(execPath, os.Args, os.Environ())
 	}
@@ -311,15 +318,11 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool, isServic
 // HandleUpgradeCmd checks command-line arguments for upgrade/check queries.
 // Supported commands:
 //   - "check", "check-update", "-check", "--check": inspects remote release without modifying files.
-//   - "upgrade", "update": downloads, verifies, installs, and restarts.
+//   - "upgrade", "update": downloads, verifies, installs, and cleanly exits.
 // Returns true if an upgrade command was handled, allowing main() to cleanly exit.
 func HandleUpgradeCmd(appName, version, commit, buildTime, manifestURL string, isService ...bool) bool {
 	if len(os.Args) > 1 {
 		arg := strings.ToLower(strings.TrimSpace(os.Args[1]))
-		serviceMode := false
-		if len(isService) > 0 {
-			serviceMode = isService[0]
-		}
 
 		switch arg {
 		case "check", "check-update", "-check", "--check":
@@ -334,7 +337,8 @@ func HandleUpgradeCmd(appName, version, commit, buildTime, manifestURL string, i
 				}
 			}
 
-			if err := ExecuteSelfUpgrade(manifestURL, version, force, serviceMode); err != nil {
+			// CLI upgrade must exit cleanly and never re-exec the upgrade command
+			if err := ExecuteSelfUpgrade(manifestURL, version, force, false); err != nil {
 				fmt.Fprintf(os.Stderr, "error: upgrade failed: %v\n", err)
 				os.Exit(1)
 			}
