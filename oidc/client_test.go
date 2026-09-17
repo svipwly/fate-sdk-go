@@ -82,3 +82,18 @@ func TestOIDCClient(t *testing.T) {
 		t.Errorf("expected duplicate VerifyState to fail")
 	}
 }
+
+func TestEnvIssuerURL(t *testing.T) {
+	t.Setenv("SSOID_ISSUER_URL", "https://sso.example.com")
+	c := NewClient(Config{})
+	if c.cfg.IssuerURL != "https://sso.example.com" {
+		t.Errorf("expected SSOID_ISSUER_URL to resolve, got %s", c.cfg.IssuerURL)
+	}
+
+	t.Setenv("SSOID_ISSUER_URL", "")
+	t.Setenv("FATEID_ISSUER_URL", "https://fateid.example.com")
+	c2 := NewClient(Config{})
+	if c2.cfg.IssuerURL != "https://fateid.example.com" {
+		t.Errorf("expected FATEID_ISSUER_URL fallback, got %s", c2.cfg.IssuerURL)
+	}
+}

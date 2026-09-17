@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +58,12 @@ type Client struct {
 
 // NewClient creates a new OIDC client instance.
 func NewClient(cfg Config) *Client {
+	if cfg.IssuerURL == "" {
+		cfg.IssuerURL = os.Getenv("SSOID_ISSUER_URL")
+		if cfg.IssuerURL == "" {
+			cfg.IssuerURL = os.Getenv("FATEID_ISSUER_URL")
+		}
+	}
 	if cfg.SessionTTL <= 0 {
 		cfg.SessionTTL = 7 * 24 * time.Hour
 	}
@@ -79,6 +86,9 @@ func NewClient(cfg Config) *Client {
 
 // GetAuthURL constructs the OAuth 2.0 authorization redirect URL.
 func (c *Client) GetAuthURL(state, redirectURI string) string {
+	if c.cfg.IssuerURL == "" {
+		return ""
+	}
 	if redirectURI == "" {
 		redirectURI = c.cfg.RedirectURI
 	}
@@ -96,6 +106,9 @@ func (c *Client) GetAuthURL(state, redirectURI string) string {
 
 // ExchangeCode exchanges an authorization code for access token and fetches user profile.
 func (c *Client) ExchangeCode(ctx context.Context, code, redirectURI string) (*User, error) {
+	if c.cfg.IssuerURL == "" {
+		return nil, fmt.Errorf("oidc: issuer URL is not configured")
+	}
 	if redirectURI == "" {
 		redirectURI = c.cfg.RedirectURI
 	}
