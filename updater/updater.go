@@ -265,10 +265,10 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool) error {
 	}
 
 	// Line 1: Dynamic download progress
-	prefix := fmt.Sprintf("Downloading %s %s...", strings.ToLower(appName), info.LatestVersion)
+	prefix := fmt.Sprintf("• Downloading %s %s...", strings.ToLower(appName), info.LatestVersion)
 	if resp.ContentLength > 0 {
 		sizeMB := float64(resp.ContentLength) / (1024 * 1024)
-		prefix = fmt.Sprintf("Downloading %s %s (%.1f MB)...", strings.ToLower(appName), info.LatestVersion, sizeMB)
+		prefix = fmt.Sprintf("• Downloading %s %s (%.1f MB)...", strings.ToLower(appName), info.LatestVersion, sizeMB)
 	}
 	fmt.Print(prefix)
 
@@ -306,9 +306,9 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool) error {
 	svcName := strings.ToLower(appName)
 	systemctlPath, hasActiveService := isSystemdServiceActive(svcName)
 	if hasActiveService {
-		fmt.Printf("Installing and restarting service (%s)... ", svcName)
+		fmt.Printf("• Installing and restarting service (%s)... ", svcName)
 	} else {
-		fmt.Print("Installing binary... ")
+		fmt.Print("• Installing binary... ")
 	}
 
 	_ = os.Chmod(tmpFile, 0755)
