@@ -290,11 +290,13 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool, isServic
 		return fmt.Errorf("backup current binary failed: %w", err)
 	}
 
+	_ = os.Chmod(tmpFile, 0755)
 	if err := os.Rename(tmpFile, execPath); err != nil {
 		_ = os.Rename(bakPath, execPath)
 		fmt.Println("failed")
 		return fmt.Errorf("replace binary failed: %w", err)
 	}
+	_ = os.Chmod(execPath, 0755)
 	fmt.Println("done")
 
 	// Line 4: Success confirmation
