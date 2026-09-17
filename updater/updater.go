@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -270,7 +271,33 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool) error {
 
 	// Line 4: Success confirmation
 	fmt.Printf("✓ Successfully upgraded to %s\n", info.LatestVersion)
+
+	// Smart auto-restart if running as an active systemd service
+	svcName := strings.ToLower(appName)
+	restartSystemdServiceIfActive(svcName)
+
 	return nil
+}
+
+// restartSystemdServiceIfActive checks if a systemd service exists and is active, and restarts it.
+func restartSystemdServiceIfActive(serviceName string) {
+	if runtime.GOOS != "linux" || serviceName == "" {
+		return
+	}
+	systemctlPath, err := exec.LookPath("systemctl")
+	if err != nil {
+		return
+	}
+
+	// Check if service is active: systemctl is-active --quiet <serviceName>
+	if err := exec.Command(systemctlPath, "is-active", "--quiet", serviceName).Run(); err == nil {
+		fmt.Printf("Restarting systemd service (%s)...\n", serviceName)
+		if err := exec.Command(systemctlPath, "restart", serviceName).Run(); err == nil {
+			fmt.Printf("✓ Restarted systemd service: %s\n", serviceName)
+		} else {
+			fmt.Printf("! Notice: could not restart %s.service: %v\n  Please run 'systemctl restart %s' manually.\n", serviceName, err, serviceName)
+		}
+	}
 }
 
 // HandleUpgradeCmd checks command-line arguments for upgrade/check queries.

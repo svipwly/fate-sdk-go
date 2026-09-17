@@ -54,7 +54,8 @@ func main() {
 	}
 
 	// 3. Intercept upgrade commands (check, upgrade [-f])
-	if updater.HandleUpgradeCmd("MyService", Version, Commit, BuildTime, "https://release.fate.li/myservice/latest.json") {
+	// Features: atomic binary replacement, SHA256 verification, auto-restart of active systemd service
+	if updater.HandleUpgradeCmd("MyService", Version, "https://release.fate.li/myservice/latest.json") {
 		return
 	}
 
