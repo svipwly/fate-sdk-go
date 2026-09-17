@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
@@ -77,6 +78,37 @@ func TestPrintCheckUpdate(t *testing.T) {
 	}
 	if err := PrintCheckUpdate("TestApp", ts.URL, "v0.2.0", "dev", ""); err != nil {
 		t.Fatalf("PrintCheckUpdate up to date failed: %v", err)
+	}
+}
+
+func TestHandleUpgradeCmdParsing(t *testing.T) {
+	manifest := ReleaseManifest{
+		Name:        "TestApp",
+		Version:     "v0.2.0",
+		PublishedAt: "2026-09-16T20:00:00Z",
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(manifest)
+	}))
+	defer ts.Close()
+
+	// "check" subcommand -> true
+	os.Args = []string{"app", "check"}
+	if !HandleUpgradeCmd("TestApp", "v0.1.0", "dev", "", ts.URL) {
+		t.Errorf("expected 'check' subcommand to be handled")
+	}
+
+	// "--check" flag -> false (rejected, must be subcommand)
+	os.Args = []string{"app", "--check"}
+	if HandleUpgradeCmd("TestApp", "v0.1.0", "dev", "", ts.URL) {
+		t.Errorf("expected '--check' to not be handled as subcommand")
+	}
+
+	// "serve" command -> false
+	os.Args = []string{"app", "serve"}
+	if HandleUpgradeCmd("TestApp", "v0.1.0", "dev", "", ts.URL) {
+		t.Errorf("expected 'serve' to not be handled")
 	}
 }
 

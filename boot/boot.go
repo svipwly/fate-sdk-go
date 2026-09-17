@@ -87,12 +87,14 @@ func PrintVersion(appName, version, commit string) {
 	log.Printf("[%s] Version: %s", appName, FormatVersionTag(version, commit))
 }
 
-// HandleVersionCmd checks command line arguments for version queries (-v, --version, version, -version).
-// If matched, it prints full build info to stdout and returns true so the caller can cleanly exit.
+// HandleVersionCmd checks command line arguments for version queries:
+//   - "version": standard modern subcommand (e.g. app version)
+//   - "--version": standard GNU long flag (e.g. app --version)
+// Returns true if matched so the caller can cleanly exit.
 func HandleVersionCmd(appName, version, commit, buildTime string) bool {
 	if len(os.Args) > 1 {
-		arg := os.Args[1]
-		if arg == "-v" || arg == "--version" || arg == "version" || arg == "-version" {
+		arg := strings.ToLower(strings.TrimSpace(os.Args[1]))
+		if arg == "version" || arg == "--version" {
 			fmt.Println(FormatVersionInfo(appName, version, commit, buildTime))
 			return true
 		}

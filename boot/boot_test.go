@@ -1,6 +1,7 @@
 package boot
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -49,5 +50,34 @@ func TestFormatVersionInfo(t *testing.T) {
 	}
 	if !strings.Contains(out, "commit: 3d16e91") {
 		t.Errorf("expected output to contain commit info, got %q", out)
+	}
+}
+
+func TestHandleVersionCmd(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	// "version" subcommand -> true
+	os.Args = []string{"app", "version"}
+	if !HandleVersionCmd("App", "v1.0.0", "abc", "") {
+		t.Errorf("expected 'version' subcommand to be handled")
+	}
+
+	// "--version" long flag -> true
+	os.Args = []string{"app", "--version"}
+	if !HandleVersionCmd("App", "v1.0.0", "abc", "") {
+		t.Errorf("expected '--version' flag to be handled")
+	}
+
+	// "-v" should NOT trigger version anymore (reserved for verbose)
+	os.Args = []string{"app", "-v"}
+	if HandleVersionCmd("App", "v1.0.0", "abc", "") {
+		t.Errorf("expected '-v' to not be handled as version subcommand")
+	}
+
+	// unknown command -> false
+	os.Args = []string{"app", "serve"}
+	if HandleVersionCmd("App", "v1.0.0", "abc", "") {
+		t.Errorf("expected 'serve' to not be handled")
 	}
 }

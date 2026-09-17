@@ -318,20 +318,22 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool, isServic
 }
 
 // HandleUpgradeCmd checks command-line arguments for upgrade/check queries.
-// Supported commands:
-//   - "check", "check-update", "-check", "--check": inspects remote release without modifying files.
-//   - "upgrade", "update": downloads, verifies, installs, and cleanly exits.
+// Supported subcommands:
+//   - "check": inspects remote release without modifying files.
+//   - "upgrade": downloads, verifies, installs, and cleanly exits.
+// Options for upgrade:
+//   - "-f", "--force": forces reinstall/redownload even if already up to date.
 // Returns true if an upgrade command was handled, allowing main() to cleanly exit.
 func HandleUpgradeCmd(appName, version, commit, buildTime, manifestURL string, isService ...bool) bool {
 	if len(os.Args) > 1 {
 		arg := strings.ToLower(strings.TrimSpace(os.Args[1]))
 
 		switch arg {
-		case "check", "check-update", "-check", "--check":
+		case "check":
 			_ = PrintCheckUpdate(appName, manifestURL, version, commit, buildTime)
 			return true
 
-		case "upgrade", "update":
+		case "upgrade":
 			force := false
 			for _, a := range os.Args[2:] {
 				if a == "-f" || a == "--force" {
