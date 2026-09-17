@@ -10,6 +10,11 @@ import (
 	"strings"
 )
 
+func init() {
+	// Automatically strip redundant Go timestamps for clean systemd/cloud-native logging
+	log.SetFlags(0)
+}
+
 // FormatVersionTag formats a clean, concise version tag string for startup logs.
 // Examples:
 //   - "v0.1.0 (5a5b5c5)"
@@ -82,9 +87,10 @@ func FormatVersionInfo(appName, version, commit, buildTime string) string {
 	return fmt.Sprintf("%s %s", appName, version)
 }
 
-// PrintVersion outputs the standard standardized startup header line:
-// Example: 2026/09/16 21:00:00 [MyService] Version: v0.1.5 (3d16e91)
+// PrintVersion outputs the standard standardized startup header line without duplicate timestamps:
+// Example: [MyService] Version: v0.1.5 (3d16e91)
 func PrintVersion(appName, version, commit string) {
+	log.SetFlags(0)
 	log.Printf("[%s] Version: %s", appName, FormatVersionTag(version, commit))
 }
 
