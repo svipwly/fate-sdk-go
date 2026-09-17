@@ -159,10 +159,44 @@ func PrintCheckUpdate(appName, manifestURL, currentVersion string) error {
 	}
 
 	cmdName := strings.ToLower(appName)
+	localCommit := getLocalCommit()
+	targetCommit := info.Commit
+	if len(targetCommit) > 7 {
+		targetCommit = targetCommit[:7]
+	}
+
+	formatVerWithCommit := func(ver, commit string) string {
+		if commit != "" {
+			return fmt.Sprintf("%s (%s)", ver, commit)
+		}
+		return ver
+	}
+
 	if info.CanUpdate {
-		fmt.Printf("%s update available: %s -> %s\nRun '%s upgrade' to update.\n", cmdName, currentVersion, info.LatestVersion, cmdName)
+		fmt.Printf("%s update available: %s -> %s\nRun '%s upgrade' to update.\n",
+			cmdName,
+			formatVerWithCommit(currentVersion, localCommit),
+			formatVerWithCommit(info.LatestVersion, targetCommit),
+			cmdName,
+		)
+	} else if localCommit != "" && targetCommit != "" && localCommit != targetCommit {
+		fmt.Printf("%s new build available: %s (%s -> %s)\nRun '%s upgrade -f' to reinstall.\n",
+			cmdName,
+			info.LatestVersion,
+			localCommit,
+			targetCommit,
+			cmdName,
+		)
 	} else {
-		fmt.Printf("✓ %s is up to date (%s)\n", cmdName, currentVersion)
+		commit := targetCommit
+		if commit == "" {
+			commit = localCommit
+		}
+		if commit != "" {
+			fmt.Printf("✓ %s is up to date: %s (%s)\n", cmdName, currentVersion, commit)
+		} else {
+			fmt.Printf("✓ %s is up to date: %s\n", cmdName, currentVersion)
+		}
 	}
 	return nil
 }
@@ -310,12 +344,12 @@ func ExecuteSelfUpgrade(manifestURL, currentVersion string, force bool) error {
 		} else if localCommit != "" {
 			commitTag = fmt.Sprintf(" (%s)", localCommit)
 		}
-		fmt.Printf("✓ Successfully reinstalled %s%s\n", info.LatestVersion, commitTag)
+		fmt.Printf("✓ Successfully reinstalled: %s%s\n", info.LatestVersion, commitTag)
 	} else {
 		if currentVersion != "" && currentVersion != "dev" {
-			fmt.Printf("✓ Successfully upgraded (%s -> %s)\n", currentVersion, info.LatestVersion)
+			fmt.Printf("✓ Successfully upgraded: %s -> %s\n", currentVersion, info.LatestVersion)
 		} else {
-			fmt.Printf("✓ Successfully upgraded to %s\n", info.LatestVersion)
+			fmt.Printf("✓ Successfully upgraded: %s\n", info.LatestVersion)
 		}
 	}
 
