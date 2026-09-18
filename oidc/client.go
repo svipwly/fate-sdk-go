@@ -167,9 +167,47 @@ func (c *Client) FetchUserInfo(ctx context.Context, accessToken string) (*User, 
 		return nil, fmt.Errorf("userinfo request failed (status %d): %s", resp.StatusCode, string(body))
 	}
 
-	var user User
-	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+	var raw struct {
+		ID                string `json:"id"`
+		Sub               string `json:"sub"`
+		Username          string `json:"username"`
+		PreferredUsername string `json:"preferred_username"`
+		DisplayName       string `json:"display_name"`
+		Name              string `json:"name"`
+		Email             string `json:"email"`
+		AvatarURL         string `json:"avatar_url"`
+		Picture           string `json:"picture"`
+		Role              string `json:"role"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decode user profile failed: %w", err)
+	}
+
+	user := User{
+		ID:          raw.ID,
+		Username:    raw.Username,
+		DisplayName: raw.DisplayName,
+		Email:       raw.Email,
+		AvatarURL:   raw.AvatarURL,
+		Role:        raw.Role,
+	}
+	if user.ID == "" {
+		user.ID = raw.Sub
+	}
+	if user.Username == "" {
+		user.Username = raw.PreferredUsername
+	}
+	if user.DisplayName == "" {
+		user.DisplayName = raw.Name
+	}
+	if user.DisplayName == "" {
+		user.DisplayName = user.Username
+	}
+	if user.AvatarURL == "" {
+		user.AvatarURL = raw.Picture
+	}
+	if user.AvatarURL != "" && strings.HasPrefix(user.AvatarURL, "/") && c.cfg.IssuerURL != "" {
+		user.AvatarURL = strings.TrimRight(c.cfg.IssuerURL, "/") + user.AvatarURL
 	}
 
 	return &user, nil
