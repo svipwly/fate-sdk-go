@@ -60,9 +60,6 @@ type Client struct {
 func NewClient(cfg Config) *Client {
 	if cfg.IssuerURL == "" {
 		cfg.IssuerURL = os.Getenv("SSOID_ISSUER_URL")
-		if cfg.IssuerURL == "" {
-			cfg.IssuerURL = os.Getenv("FATEID_ISSUER_URL")
-		}
 	}
 	if cfg.SessionTTL <= 0 {
 		cfg.SessionTTL = 7 * 24 * time.Hour

@@ -159,6 +159,7 @@ func checkUpdate() {
 | :--- | :--- | :--- |
 | **`boot`** | `github.com/svipwly/fate-sdk-go/boot` | Startup log formatting, buildinfo reflection, version CLI |
 | **`updater`** | `github.com/svipwly/fate-sdk-go/updater` | Release manifest parser, SemVer comparator, atomic binary self-upgrader |
+| **`env`** | `github.com/svipwly/fate-sdk-go/env` | Standardized environment and config loaders (`LISTEN_ADDR`, `SSO`, `S3`, `DB`, `LOG`) |
 | **`ginspa`** | `github.com/svipwly/fate-sdk-go/ginspa` | Embedded frontend SPA static server for Gin with caching and routing fallback |
 | **`oidc`** | `github.com/svipwly/fate-sdk-go/oidc` | OpenID Connect / OAuth 2.0 client, token cache, and session manager |
 
