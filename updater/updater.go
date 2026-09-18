@@ -90,11 +90,15 @@ func (pw *progressWriter) Write(p []byte) (int, error) {
 
 // CheckUpdate queries remote latest.json and determines if an update is available.
 func CheckUpdate(manifestURL, currentVersion string) (*SystemVersionInfo, error) {
-	platformKey := fmt.Sprintf("%s-%s", runtime.GOOS, runtime.GOARCH)
-
+	manifestURL = strings.TrimSpace(manifestURL)
 	info := &SystemVersionInfo{
 		CurrentVersion: currentVersion,
 	}
+	if manifestURL == "" {
+		return info, fmt.Errorf("MANIFEST_URL is not configured (please check your .env file)")
+	}
+
+	platformKey := fmt.Sprintf("%s-%s", runtime.GOOS, runtime.GOARCH)
 
 	httpClient := &http.Client{Timeout: 8 * time.Second}
 	resp, err := httpClient.Get(bustCache(manifestURL))
