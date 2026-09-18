@@ -93,7 +93,7 @@ func LoadS3() S3Config {
 		Bucket:          Get("S3_BUCKET", ""),
 		AccessKeyID:     Get("S3_ACCESS_KEY_ID", ""),
 		SecretAccessKey: Get("S3_SECRET_ACCESS_KEY", ""),
-		UsePathStyle:    GetBool("S3_USE_PATH_STYLE", true),
+		UsePathStyle:    GetBool("S3_USE_PATH_STYLE", false),
 	}
 }
 
