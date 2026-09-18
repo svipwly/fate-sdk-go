@@ -17,12 +17,16 @@ import (
 
 // User represents authenticated user profile claims from the OIDC provider.
 type User struct {
-	ID          string `json:"id"`
-	Username    string `json:"username"`
-	DisplayName string `json:"display_name"`
-	Email       string `json:"email"`
-	AvatarURL   string `json:"avatar_url"`
-	Role        string `json:"role"`
+	Sub               string `json:"sub"`
+	ID                string `json:"id,omitempty"`
+	PreferredUsername string `json:"preferred_username"`
+	Username          string `json:"username,omitempty"`
+	Name              string `json:"name"`
+	DisplayName       string `json:"display_name,omitempty"`
+	Email             string `json:"email"`
+	Picture           string `json:"picture"`
+	AvatarURL         string `json:"avatar_url,omitempty"`
+	Role              string `json:"role"`
 }
 
 // Session represents an active authenticated user session.
@@ -183,31 +187,40 @@ func (c *Client) FetchUserInfo(ctx context.Context, accessToken string) (*User, 
 		return nil, fmt.Errorf("decode user profile failed: %w", err)
 	}
 
+	sub := raw.Sub
+	if sub == "" {
+		sub = raw.ID
+	}
+	prefUser := raw.PreferredUsername
+	if prefUser == "" {
+		prefUser = raw.Username
+	}
+	name := raw.Name
+	if name == "" {
+		name = raw.DisplayName
+	}
+	if name == "" {
+		name = prefUser
+	}
+	pic := raw.Picture
+	if pic == "" {
+		pic = raw.AvatarURL
+	}
+	if pic != "" && strings.HasPrefix(pic, "/") && c.cfg.IssuerURL != "" {
+		pic = strings.TrimRight(c.cfg.IssuerURL, "/") + pic
+	}
+
 	user := User{
-		ID:          raw.ID,
-		Username:    raw.Username,
-		DisplayName: raw.DisplayName,
-		Email:       raw.Email,
-		AvatarURL:   raw.AvatarURL,
-		Role:        raw.Role,
-	}
-	if user.ID == "" {
-		user.ID = raw.Sub
-	}
-	if user.Username == "" {
-		user.Username = raw.PreferredUsername
-	}
-	if user.DisplayName == "" {
-		user.DisplayName = raw.Name
-	}
-	if user.DisplayName == "" {
-		user.DisplayName = user.Username
-	}
-	if user.AvatarURL == "" {
-		user.AvatarURL = raw.Picture
-	}
-	if user.AvatarURL != "" && strings.HasPrefix(user.AvatarURL, "/") && c.cfg.IssuerURL != "" {
-		user.AvatarURL = strings.TrimRight(c.cfg.IssuerURL, "/") + user.AvatarURL
+		Sub:               sub,
+		ID:                sub,
+		PreferredUsername: prefUser,
+		Username:          prefUser,
+		Name:              name,
+		DisplayName:       name,
+		Email:             raw.Email,
+		Picture:           pic,
+		AvatarURL:         pic,
+		Role:              raw.Role,
 	}
 
 	return &user, nil
