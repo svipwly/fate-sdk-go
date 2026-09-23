@@ -15,12 +15,8 @@ func init() {
 	log.SetFlags(0)
 }
 
-// FormatVersionTag formats a clean, concise version tag string for startup logs.
-// Examples:
-//   - "v0.1.0 (5a5b5c5)"
-//   - "v0.1.0 (5a5b5c5-dirty)"
-//   - "v0.1.0 (dev)"
-func FormatVersionTag(version, commit string) string {
+// ResolveCommit resolves git commit hash from Go build metadata if commit is empty or "dev".
+func ResolveCommit(commit string) string {
 	if commit == "" || commit == "dev" {
 		if bi, ok := debug.ReadBuildInfo(); ok {
 			for _, setting := range bi.Settings {
@@ -42,6 +38,16 @@ func FormatVersionTag(version, commit string) string {
 	if commit == "" {
 		commit = "dev"
 	}
+	return commit
+}
+
+// FormatVersionTag formats a clean, concise version tag string for startup logs.
+// Examples:
+//   - "v0.1.0 (5a5b5c5)"
+//   - "v0.1.0 (5a5b5c5-dirty)"
+//   - "v0.1.0 (dev)"
+func FormatVersionTag(version, commit string) string {
+	commit = ResolveCommit(commit)
 	return fmt.Sprintf("%s (%s)", version, commit)
 }
 
@@ -49,23 +55,13 @@ func FormatVersionTag(version, commit string) string {
 // Example:
 //   - "MyService v0.1.5 (commit: 3d16e91, built: 2026-09-07T16:48:00Z, go: go1.26.6, linux/amd64)"
 func FormatVersionInfo(appName, version, commit, buildTime string) string {
-	if commit == "" || commit == "dev" {
+	commit = ResolveCommit(commit)
+	if buildTime == "" {
 		if bi, ok := debug.ReadBuildInfo(); ok {
 			for _, setting := range bi.Settings {
-				if setting.Key == "vcs.revision" {
-					if len(setting.Value) > 7 {
-						commit = setting.Value[:7]
-					} else {
-						commit = setting.Value
-					}
-				}
-				if setting.Key == "vcs.time" && buildTime == "" {
+				if setting.Key == "vcs.time" {
 					buildTime = setting.Value
-				}
-				if setting.Key == "vcs.modified" && setting.Value == "true" {
-					if !strings.HasSuffix(commit, "-dirty") && commit != "" && commit != "dev" {
-						commit += "-dirty"
-					}
+					break
 				}
 			}
 		}

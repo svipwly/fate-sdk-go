@@ -10,11 +10,11 @@ import (
 	"net/http"
 	"os"
 	"runtime"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/svipwly/fate-sdk-go/boot"
 	"github.com/svipwly/fate-sdk-go/updater"
 )
 
@@ -99,24 +99,7 @@ func StartReporter(ctx context.Context, cfg ClientConfig) {
 		}
 	}
 
-	if cfg.Commit == "" || cfg.Commit == "dev" {
-		if bi, ok := debug.ReadBuildInfo(); ok {
-			for _, setting := range bi.Settings {
-				if setting.Key == "vcs.revision" {
-					if len(setting.Value) > 7 {
-						cfg.Commit = setting.Value[:7]
-					} else {
-						cfg.Commit = setting.Value
-					}
-				}
-				if setting.Key == "vcs.modified" && setting.Value == "true" {
-					if !strings.HasSuffix(cfg.Commit, "-dirty") && cfg.Commit != "" && cfg.Commit != "dev" {
-						cfg.Commit += "-dirty"
-					}
-				}
-			}
-		}
-	}
+	cfg.Commit = boot.ResolveCommit(cfg.Commit)
 
 	r := &reporter{
 		cfg:        cfg,
