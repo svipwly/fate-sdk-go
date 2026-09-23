@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -95,6 +96,25 @@ func StartReporter(ctx context.Context, cfg ClientConfig) {
 			cfg.InstanceName = h
 		} else {
 			cfg.InstanceName = "unknown-host"
+		}
+	}
+
+	if cfg.Commit == "" || cfg.Commit == "dev" {
+		if bi, ok := debug.ReadBuildInfo(); ok {
+			for _, setting := range bi.Settings {
+				if setting.Key == "vcs.revision" {
+					if len(setting.Value) > 7 {
+						cfg.Commit = setting.Value[:7]
+					} else {
+						cfg.Commit = setting.Value
+					}
+				}
+				if setting.Key == "vcs.modified" && setting.Value == "true" {
+					if !strings.HasSuffix(cfg.Commit, "-dirty") && cfg.Commit != "" && cfg.Commit != "dev" {
+						cfg.Commit += "-dirty"
+					}
+				}
+			}
 		}
 	}
 
