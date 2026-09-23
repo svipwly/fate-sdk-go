@@ -12,14 +12,14 @@ import (
 	"time"
 )
 
-// GenerateSecureToken creates an opaque, high-entropy token prefixed with arks_tok_.
+// GenerateSecureToken creates an opaque, high-entropy token prefixed with tok_.
 func GenerateSecureToken() string {
 	bytes := make([]byte, 16)
 	if _, err := rand.Read(bytes); err != nil {
 		// Fallback timestamp mix
-		return fmt.Sprintf("arks_tok_%d%x", time.Now().UnixNano(), os.Getpid())
+		return fmt.Sprintf("tok_%d%x", time.Now().UnixNano(), os.Getpid())
 	}
-	return fmt.Sprintf("arks_tok_%s", hex.EncodeToString(bytes))
+	return fmt.Sprintf("tok_%s", hex.EncodeToString(bytes))
 }
 
 // Store defines persistence operations for tokens, instance health, and pending commands.
