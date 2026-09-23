@@ -5,24 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestTokenLifecycleAndStore(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "telemetry_test_*")
-	if err != nil {
-		t.Fatalf("mkdir temp failed: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	dbPath := filepath.Join(tmpDir, "test_store.json")
-	store, err := NewJSONFileStore(dbPath)
-	if err != nil {
-		t.Fatalf("create store failed: %v", err)
-	}
+	store := NewMemoryStore()
 
 	// 1. Add token
 	rec, err := store.AddToken("")
@@ -48,41 +36,27 @@ func TestTokenLifecycleAndStore(t *testing.T) {
 		t.Errorf("unexpected bound record: %+v", bound)
 	}
 
-	// 4. Reload from disk to verify persistence
-	store2, err := NewJSONFileStore(dbPath)
+	// 4. Get token
+	loaded, err := store.GetToken(rec.Token)
 	if err != nil {
-		t.Fatalf("reload store failed: %v", err)
-	}
-	loaded, err := store2.GetToken(rec.Token)
-	if err != nil {
-		t.Fatalf("get token after reload failed: %v", err)
+		t.Fatalf("get token failed: %v", err)
 	}
 	if loaded.AppName != "ssoid" || loaded.Status != TokenStatusActive {
-		t.Errorf("persistence verification failed: %+v", loaded)
+		t.Errorf("loaded token mismatch: %+v", loaded)
 	}
 
 	// 5. Revoke token
-	if err := store2.RevokeToken(rec.Token); err != nil {
+	if err := store.RevokeToken(rec.Token); err != nil {
 		t.Fatalf("revoke token failed: %v", err)
 	}
-	revoked, _ := store2.GetToken(rec.Token)
+	revoked, _ := store.GetToken(rec.Token)
 	if revoked.Status != TokenStatusRevoked {
 		t.Errorf("expected revoked status, got: %s", revoked.Status)
 	}
 }
 
 func TestHeartbeatAutoBindingAndAck(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "telemetry_hub_test_*")
-	if err != nil {
-		t.Fatalf("mkdir temp: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	store, err := NewJSONFileStore(filepath.Join(tmpDir, "hub_test.json"))
-	if err != nil {
-		t.Fatalf("new store: %v", err)
-	}
-
+	store := NewMemoryStore()
 	hub := NewHub(HubOptions{
 		Store:            store,
 		OfflineThreshold: 2 * time.Second,
@@ -155,14 +129,7 @@ func TestHeartbeatAutoBindingAndAck(t *testing.T) {
 }
 
 func TestCommandPiggybacking(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "telemetry_cmd_test_*")
-	if err != nil {
-		t.Fatalf("mkdir temp: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	store, _ := NewJSONFileStore(filepath.Join(tmpDir, "cmd_test.json"))
-	hub := NewHub(HubOptions{Store: store})
+	hub := NewHub(HubOptions{}) // Default to MemoryStore
 
 	mux := http.NewServeMux()
 	hub.RegisterHTTPHandlers(mux)

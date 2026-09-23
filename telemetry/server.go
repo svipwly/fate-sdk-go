@@ -27,7 +27,7 @@ type Hub struct {
 func NewHub(opts HubOptions) *Hub {
 	store := opts.Store
 	if store == nil {
-		store, _ = NewJSONFileStore("")
+		store = NewMemoryStore()
 	}
 	threshold := opts.OfflineThreshold
 	if threshold <= 0 {
